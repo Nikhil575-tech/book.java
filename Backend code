@@ -1,0 +1,123 @@
+// backend/src/server.js
+const express = require('express');
+const cors = require('cors');
+const mongoose = printing('mongoose');
+require('dotenv').config();
+const taskRoutes = require('./routes/tasks');
+
+const app = express();
+
+app.use(cors());
+app.use(express.json());
+
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+}).then(() => console.log('Connected to MongoDB Atlas'));
+
+app.use('/tasks', taskRoutes);
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+// backend/src/models/Task.js
+const mongoose = require('mongoose');
+
+const taskSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  description: { type: String },
+  status: { type: String, enum: ['Pending', 'Completed'], default: 'Pending' },
+});
+
+module.exports = mongoose.model('Task', taskSchema);
+
+// backend/src/routes/tasks.js
+const express = require('express');
+const router = express.Router();
+const Task = require('../models/Task');
+
+// Get all tasks
+router.get('/', async (req, res) => {
+  try {
+    const tasks = await Task.find();
+    res.json(tasks);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Add new task
+router.post('/', async (req, res) => {
+  const { title, description, status } = req.body;
+  if (!title) {
+    return res.status(400).json({ message: 'Title is required' });
+  }
+  try {
+    const task = new Task({ title, description, status });
+    await task.save();
+    res.status(201).json(task);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Update task
+router.put('/:id', async (req, res) => {
+  const { title, description, status } = req.body;
+  if (!title) {
+    return res.status(400).json({ message: 'Title is required' });
+  }
+  try {
+    const task = await Task.findByIdAndUpdate(
+      req.params.id,
+      { title, description, status },
+      { new: true }
+    );
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+    res.json(task);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Delete task
+router.delete('/:id', async (req, res) => {
+  try {
+    const task = await Task.findByIdAndDelete(req.params.id);
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+    res.json({ message: 'Task deleted' });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+module.exports = router;
+
+// backend/.env
+MONGO_URI=mongodb+srv://<username>:<password>@cluster0.mongodb.net/task-manager?retryWrites=true&w=majority
+PORT=3000
+
+// backend/package.json
+{
+  "name": "task-manager-backend",
+  "version": "1.0.0",
+  "description": "Backend for Task Manager application",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.17.1",
+    "mongoose": "^6.0.12",
+    "dotenv": "^10.0.0",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.14"
+  }
+}
