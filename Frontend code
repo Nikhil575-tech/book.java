@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Task Manager — Vue + Axios</title>
+
+  <!-- Bootstrap CSS (optional, for clean UI) -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <style>
+    body { background:#f7f9fc; }
+    .container { max-width: 980px; }
+    .card { box-shadow: 0 6px 18px rgba(20,20,40,0.06); }
+    .badge-status { font-size: 0.85rem; padding:.45rem .6rem; border-radius: .7rem; }
+  </style>
+</head>
+<body>
+  <div id="app" class="container py-4">
+    <h1 class="mb-3">Task Manager</h1>
+
+    <div v-if="error" class="alert alert-danger" role="alert">{{ error }}</div>
+
+    <!-- Form -->
+    <div class="card mb-4">
+      <div class="card-body">
+        <form @submit.prevent="onSubmit" autocomplete="off">
+          <div class="row g-2 align-items-center">
+            <div class="col-md-4">
+              <input v-model.trim="form.title" type="text" class="form-control" placeholder="Title" />
+            </div>
+
+            <div class="col-md-4">
+              <input v-model.trim="form.description" type="text" class="form-control" placeholder="Description" />
+            </div>
+
+            <div class="col-md-2">
+              <select v-model="form.status" class="form-select">
+                <option value="Pending">Pending</option>
+                <option value="Completed">Completed</option>
+              </select>
+            </div>
+
+            <div class="col-md-2">
+              <button :disabled="loading" type="submit" class="btn btn-primary w-100">
+                <template v-if="editingId">
+                  {{ loading ? 'Saving...' : 'Save Changes' }}
+                </template>
+                <template v-else>
+                  {{ loading ? 'Adding...' : 'Add Task' }}
+                </template>
+              </button>
+            </div>
+          </div>
+        </form>
+
+        <div v-if="editingId" class="mt-2">
+          <button class="btn btn-sm btn-outline-secondary" @click="cancelEdit">Cancel edit</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="mb-2 d-flex justify-content-between align-items-center">
+      <div>
+        <button class="btn btn-outline-secondary btn-sm me-2" @click="fetchTasks" :disabled="loading">Refresh</button>
+        <small class="text-muted">Tasks: {{ tasks.length }}</small>
+      </div>
+      <div v-if="loading" class="small text-muted">Loading…</div>
+    </div>
+
+    <!-- Table -->
+    <div class="card">
+      <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th style="width: 22%">Title</th>
+              <th style="width: 48%">Description</th>
+              <th style="width: 14%">Status</th>
+              <th style="width: 16%">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="task in tasks" :key="task._id || task.id">
+              <td>{{ task.title }}</td>
+              <td>{{ task.description }}</td>
+              <td>
+                <span :class="task.status === 'Completed' ? 'badge bg-success badge-status' : 'badge bg-warning text-dark badge-status'">
+                  {{ task.status }}
+                </span>
+              </td>
+              <td>
+                <button class="btn btn-sm btn-outline-primary me-1" @click="startEdit(task)">Edit</button>
+                <button class="btn btn-sm btn-outline-danger" @click="removeTask(task)">Delete</button>
+              </td>
+            </tr>
+
+            <tr v-if="tasks.length === 0">
+              <td colspan="4" class="text-center p-4 text-muted">No tasks found — add one above.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <footer class="text-muted small mt-3">Tip: Replace <code>API_BASE</code> in the script with your backend URL.</footer>
+  </div>
+
+  <!-- Axios + Vue 3 (global build) -->
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+
+  <script>
+    // =========== CONFIG ===========
+    // Set this to your backend base URL (Render/Railway or local dev)
+    // Examples:
+    // const API_BASE = 'https://your-backend.onrender.com';   // production host
+    // const API_BASE = 'https://your-app.up.railway.app';     // railway
+    // const API_BASE = 'http://localhost:5000';               // local dev
+    const API_BASE = 'http://localhost:5000'; // <-- REPLACE this
+
+    // =========== APP ===========
+    const { createApp } = Vue;
+
+    createApp({
+      data() {
+        return {
+          tasks: [],
+          form: { title: '', description: '', status: 'Pending' },
+          editingId: null,
+          loading: false,
+          error: ''
+        };
+      },
+      created() {
+        this.fetchTasks();
+      },
+      methods: {
+        async fetchTasks() {
+          this.error = '';
+          this.loading = true;
+          try {
+            const res = await axios.get(`${API_BASE}/tasks`);
+            // Expecting backend to return an array of tasks
+            this.tasks = Array.isArray(res.data) ? res.data : (res.data.tasks || []);
+          } catch (err) {
+            console.error('fetchTasks error', err);
+            this.error = 'Could not fetch tasks. Check backend URL and CORS settings.';
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        validateForm() {
+          if (!this.form.title || this.form.title.trim().length === 0) {
+            this.error = 'Title is required.';
+            return false;
+          }
+          if (!['Pending', 'Completed'].includes(this.form.status)) {
+            this.error = 'Invalid status.';
+            return false;
+          }
+          this.error = '';
+          return true;
+        },
+
+        async onSubmit() {
+          if (!this.validateForm()) return;
+          if (this.editingId) {
+            await this.updateTask();
+          } else {
+            await this.addTask();
+          }
+        },
+
+        async addTask() {
+          this.loading = true;
+          try {
+            const payload = {
+              title: this.form.title,
+              description: this.form.description,
+              status: this.form.status
+            };
+            const res = await axios.post(`${API_BASE}/tasks`, payload);
+            // Expecting backend to return created task object
+            const newTask = res.data;
+            this.tasks.push(newTask);
+            this.form.title = '';
+            this.form.description = '';
+            this.form.status = 'Pending';
+          } catch (err) {
+            console.error('addTask error', err);
+            this.error = 'Failed to add task. Check backend and network.';
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        startEdit(task) {
+          this.editingId = task._id || task.id;
+          this.form.title = task.title || '';
+          this.form.description = task.description || '';
+          this.form.status = task.status || 'Pending';
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        },
+
+        cancelEdit() {
+          this.editingId = null;
+          this.form.title = '';
+          this.form.description = '';
+          this.form.status = 'Pending';
+          this.error = '';
+        },
+
+        async updateTask() {
+          if (!this.editingId) { this.error = 'No task selected for edit.'; return; }
+          this.loading = true;
+          try {
+            const payload = {
+              title: this.form.title,
+              description: this.form.description,
+              status: this.form.status
+            };
+            const res = await axios.put(`${API_BASE}/tasks/${this.editingId}`, payload);
+            const updated = res.data;
+            const idx = this.tasks.findIndex(t => (t._id || t.id) === this.editingId);
+            if (idx !== -1) this.tasks.splice(idx, 1, updated);
+            this.cancelEdit();
+          } catch (err) {
+            console.error('updateTask error', err);
+            this.error = 'Failed to update task.';
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        async removeTask(task) {
+          const id = task._id || task.id;
+          if (!id) return;
+          if (!confirm('Are you sure you want to delete this task?')) return;
+
+          try {
+            await axios.delete(`${API_BASE}/tasks/${id}`);
+            this.tasks = this.tasks.filter(t => (t._id || t.id) !== id);
+          } catch (err) {
+            console.error('delete error', err);
+            this.error = 'Failed to delete task.';
+          }
+        }
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
